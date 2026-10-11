@@ -97,15 +97,15 @@ Refer to [ADR 0001: Capability-Based Interface Architecture](docs/adr/0001-capab
 - Keep functions small and focused.
 - Avoid unnecessary abstractions.
 - Prefer composition over inheritance.
-
 ### Package Design & Naming
 - **Shallow Nesting**: Avoid deep package hierarchies (e.g. avoid `internal/transport/http/client/v1`). Keep the package layout shallow, clean, and flat (maximum 1–2 levels deep).
 - **Idiomatic Naming**: Use short, lowercase, single-word package names (`paykit`, `mpesa`, `airtelmoney`, `pesapal`, `gateway`). Never use underscores, dashes, or mixedCaps in package names.
 - **No Stutter**: Avoid redundant names where the package name repeats the enclosing directory or type (e.g., avoid `transport.TransportClient` or `client.ClientConfig`).
 
 ### Cross-Package Exported Symbol Documentation
-- **Purpose & Intent**: Every exported type, interface, function, method, and package-level constant must be documented with conventional Godoc comments.
+- **Purpose & Intent**: Every exported type, interface, function, method, and package-level constant must be documented with conventional Godoc comments explaining their purpose and consumer usage.
 - **Consumer-Centric Focus**: Godoc comments must clearly explain **when** to use the symbol and **how** to use it without exposing or coupling consumers to its inner workings. The intent of each exported symbol is to expose a specific public capability or piece of data.
+- **Caller-Facing Side Effects**: Disclose caller-facing side effects explicitly in Godoc comments (e.g. consuming or mutating an `io.Reader` such as `r.Body`, acquiring locks, modifying inputs, or mutating persistent state).
 - **Implementation Comments**: Internal mechanics, algorithmic choices, and implementation details must be documented using regular internal comments (`// ...`) within function bodies or unexported symbols, never in public Godoc comments.
 
 ## Testing
