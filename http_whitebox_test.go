@@ -204,3 +204,43 @@ func TestParseRetryAfter(t *testing.T) {
 		t.Errorf("expected ~60s, got %v (ok=%v)", d, ok)
 	}
 }
+
+func TestCalculateBackoffWithJitter(t *testing.T) {
+	t.Parallel()
+
+	baseDelay := 100 * time.Millisecond
+
+	if got := calculateBackoffWithJitter(0, 1); got != 0 {
+		t.Errorf("expected 0 for zero base delay, got: %v", got)
+	}
+	if got := calculateBackoffWithJitter(-time.Second, 1); got != 0 {
+		t.Errorf("expected 0 for negative base delay, got: %v", got)
+	}
+
+	for attempt := 1; attempt <= 4; attempt++ {
+		base := baseDelay * time.Duration(1<<uint(attempt-1))
+		minBound := base * 80 / 100
+		maxBound := base * 120 / 100
+
+		seenDifferent := false
+		var firstDelay time.Duration
+
+		for i := 0; i < 50; i++ {
+			got := calculateBackoffWithJitter(baseDelay, attempt)
+			if got < minBound || got > maxBound {
+				t.Fatalf("attempt %d iteration %d: delay %v outside expected [%v, %v]",
+					attempt, i, got, minBound, maxBound)
+			}
+			if i == 0 {
+				firstDelay = got
+			} else if got != firstDelay {
+				seenDifferent = true
+			}
+		}
+
+		if !seenDifferent {
+			t.Errorf("attempt %d: expected randomized jitter variation across 50 iterations, but all were %v",
+				attempt, firstDelay)
+		}
+	}
+}

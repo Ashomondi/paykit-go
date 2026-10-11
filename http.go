@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -139,8 +140,13 @@ func (c *HTTPClient) SetTransport(rt http.RoundTripper) {
 }
 
 // Do sends req with ctx and returns the final HTTP response.
-// It centralizes Idempotency-Key validation, auto-generation, exponential backoff retries,
+// It centralizes Idempotency-Key validation, auto-generation, exponential backoff retries with jitter,
 // and audit logging.
+//
+// If the request contains a body and retries are enabled (attempts > 1), req.GetBody
+// must be non-nil so the body can be rewound across retry attempts. Callers constructing
+// requests with standard constructors like http.NewRequestWithContext using bytes.Reader,
+// bytes.Buffer, or strings.Reader will have req.GetBody automatically populated.
 func (c *HTTPClient) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
 	if req == nil {
 		return nil, fmt.Errorf("paykit: nil http request")
@@ -171,19 +177,19 @@ func (c *HTTPClient) execute(ctx context.Context, req *http.Request) (*http.Resp
 		c.client = NewHTTPClient(HTTPClientConfig{}).client
 	}
 
-	// Validate or inject Idempotency-Key on mutating methods
+	var idempotencyKey string
 	if isMutatingMethod(req.Method) {
-		key := req.Header.Get(headerIdempotencyKey)
-		if key == "" {
+		idempotencyKey = req.Header.Get(headerIdempotencyKey)
+		if idempotencyKey == "" {
 			switch c.idempotencyPolicy {
 			case IdempotencyPolicyRequire:
 				return nil, ErrMissingIdempotencyKeySentinel
 			case IdempotencyPolicyAutoGenerate:
-				generatedKey, err := generateIdempotencyKey()
+				key, err := generateIdempotencyKey()
 				if err != nil {
 					return nil, fmt.Errorf("paykit: failed to generate idempotency key: %w", err)
 				}
-				req.Header.Set(headerIdempotencyKey, generatedKey)
+				idempotencyKey = key
 			case IdempotencyPolicyOptional:
 				// Proceed without key; request will not be eligible for retries
 			}
@@ -195,7 +201,7 @@ func (c *HTTPClient) execute(ctx context.Context, req *http.Request) (*http.Resp
 		attempts = defaultMaxAttempts
 	}
 
-	canRetry := isRetryableMethod(req)
+	canRetry := isRetryableMethodWithKey(req.Method, idempotencyKey)
 	hasBody := req.Body != nil && req.Body != http.NoBody
 
 	// When retries are possible and a body is present, GetBody must be non-nil
@@ -214,6 +220,10 @@ func (c *HTTPClient) execute(ctx context.Context, req *http.Request) (*http.Resp
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		if idempotencyKey != "" {
+			attemptReq.Header.Set(headerIdempotencyKey, idempotencyKey)
 		}
 
 		c.dumpRequest(attemptReq)
@@ -311,8 +321,12 @@ func isMutatingMethod(method string) bool {
 // Mutating methods (POST, PUT, PATCH, DELETE) are only retried when an Idempotency-Key
 // header is present, guaranteeing upstream deduplication.
 func isRetryableMethod(req *http.Request) bool {
-	if isMutatingMethod(req.Method) {
-		return req.Header.Get(headerIdempotencyKey) != ""
+	return isRetryableMethodWithKey(req.Method, req.Header.Get(headerIdempotencyKey))
+}
+
+func isRetryableMethodWithKey(method, idempotencyKey string) bool {
+	if isMutatingMethod(method) {
+		return idempotencyKey != ""
 	}
 	return true
 }
@@ -360,7 +374,35 @@ func parseRetryAfter(header string) (time.Duration, bool) {
 }
 
 func sleepBeforeRetry(ctx context.Context, baseDelay time.Duration, attempt int) error {
-	return sleepFor(ctx, baseDelay*time.Duration(1<<uint(attempt-1)))
+	return sleepFor(ctx, calculateBackoffWithJitter(baseDelay, attempt))
+}
+
+func calculateBackoffWithJitter(baseDelay time.Duration, attempt int) time.Duration {
+	if baseDelay <= 0 {
+		return 0
+	}
+	if attempt < 1 {
+		attempt = 1
+	}
+	shift := attempt - 1
+	if shift > 30 {
+		shift = 30
+	}
+	base := baseDelay * time.Duration(1<<uint(shift))
+
+	// ±20% jitter: range is [0.8 * base, 1.2 * base]
+	minDelay := base * 80 / 100
+	maxDelay := base * 120 / 100
+	variance := maxDelay - minDelay
+	if variance <= 0 {
+		return base
+	}
+
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(variance)+1))
+	if err != nil {
+		return base
+	}
+	return minDelay + time.Duration(n.Int64())
 }
 
 func sleepFor(ctx context.Context, d time.Duration) error {

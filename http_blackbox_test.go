@@ -132,6 +132,9 @@ func TestHTTPClient_IdempotencyPolicy_AutoGenerate(t *testing.T) {
 	if !uuidRegex.MatchString(receivedKey) {
 		t.Errorf("expected generated key to match UUIDv4 format, got: %q", receivedKey)
 	}
+	if origKey := req.Header.Get("Idempotency-Key"); origKey != "" {
+		t.Errorf("expected caller original request header to remain unmutated, got: %q", origKey)
+	}
 }
 
 func TestHTTPClient_IdempotencyPolicy_Optional(t *testing.T) {
