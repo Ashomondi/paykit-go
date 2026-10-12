@@ -12,8 +12,8 @@ import (
 var ErrUnknownGateway = errors.New("paykit: unknown payment gateway")
 
 // Factory constructs an initialized Gateway instance.
-// Providers register a Factory func with Register during package initialization
-// or at runtime.
+// Callers register a Factory closure with Register during application startup
+// or configuration loading.
 type Factory func() (Gateway, error)
 
 var (

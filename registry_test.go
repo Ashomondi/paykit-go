@@ -29,6 +29,9 @@ func (m *mockGateway) Refund(_ context.Context, _ *paykit.RefundRequest) (*payki
 }
 
 func TestRegister_Success(t *testing.T) {
+	t.Cleanup(paykit.ResetRegistryForTesting)
+	paykit.ResetRegistryForTesting()
+
 	name := "test_provider_success"
 	expected := &mockGateway{name: name}
 
@@ -43,6 +46,9 @@ func TestRegister_Success(t *testing.T) {
 }
 
 func TestRegister_Panics(t *testing.T) {
+	t.Cleanup(paykit.ResetRegistryForTesting)
+	paykit.ResetRegistryForTesting()
+
 	t.Run("empty name panics", func(t *testing.T) {
 		assert.PanicsWithValue(t, "paykit: provider name cannot be empty", func() {
 			paykit.Register("", func() (paykit.Gateway, error) {
@@ -72,6 +78,9 @@ func TestRegister_Panics(t *testing.T) {
 }
 
 func TestGet_UnknownGateway(t *testing.T) {
+	t.Cleanup(paykit.ResetRegistryForTesting)
+	paykit.ResetRegistryForTesting()
+
 	gw, err := paykit.Get("non_existent_provider")
 	assert.Nil(t, gw)
 	require.Error(t, err)
@@ -80,6 +89,9 @@ func TestGet_UnknownGateway(t *testing.T) {
 }
 
 func TestGet_FactoryErrorPropagation(t *testing.T) {
+	t.Cleanup(paykit.ResetRegistryForTesting)
+	paykit.ResetRegistryForTesting()
+
 	name := "test_failing_factory"
 	expectedErr := errors.New("initialization failed: missing credentials")
 
@@ -94,8 +106,21 @@ func TestGet_FactoryErrorPropagation(t *testing.T) {
 }
 
 func TestRegisteredGateways(t *testing.T) {
+	t.Cleanup(paykit.ResetRegistryForTesting)
+	paykit.ResetRegistryForTesting()
+
+	paykit.Register("test_alpha_provider", func() (paykit.Gateway, error) {
+		return &mockGateway{name: "test_alpha_provider"}, nil
+	})
+	paykit.Register("test_beta_provider", func() (paykit.Gateway, error) {
+		return &mockGateway{name: "test_beta_provider"}, nil
+	})
+
 	names := paykit.RegisteredGateways()
 	require.NotEmpty(t, names)
+
+	assert.Contains(t, names, "test_alpha_provider")
+	assert.Contains(t, names, "test_beta_provider")
 
 	// Verify sorting order
 	for i := 1; i < len(names); i++ {
@@ -104,19 +129,30 @@ func TestRegisteredGateways(t *testing.T) {
 }
 
 func TestRegistry_Concurrency(t *testing.T) {
+	t.Cleanup(paykit.ResetRegistryForTesting)
+	paykit.ResetRegistryForTesting()
+
+	name := "test_provider_concurrency"
+	paykit.Register(name, func() (paykit.Gateway, error) {
+		return &mockGateway{name: name}, nil
+	})
+
 	const goroutines = 100
 	var wg sync.WaitGroup
 	wg.Add(goroutines * 2)
 
 	for i := 0; i < goroutines; i++ {
-		go func(id int) {
+		go func() {
 			defer wg.Done()
-			_, _ = paykit.Get("test_provider_success")
-		}(i)
+			gw, err := paykit.Get(name)
+			assert.NoError(t, err)
+			assert.NotNil(t, gw)
+		}()
 
 		go func() {
 			defer wg.Done()
-			_ = paykit.RegisteredGateways()
+			names := paykit.RegisteredGateways()
+			assert.NotEmpty(t, names)
 		}()
 	}
 
