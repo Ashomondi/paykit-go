@@ -39,11 +39,12 @@ const (
 )
 
 const (
-	defaultConnectionTimeout = 10 * time.Second
-	defaultRequestTimeout    = 30 * time.Second
-	defaultRetryBaseDelay    = 100 * time.Millisecond
-	defaultMaxAttempts       = 3
-	headerIdempotencyKey     = "Idempotency-Key"
+	defaultConnectionTimeout  = 10 * time.Second
+	defaultRequestTimeout     = 30 * time.Second
+	defaultRetryBaseDelay     = 100 * time.Millisecond
+	defaultMaxRetryAfterDelay = 60 * time.Second
+	defaultMaxAttempts        = 3
+	headerIdempotencyKey      = "Idempotency-Key"
 )
 
 // HTTPClientConfig configures the shared transport client.
@@ -243,20 +244,22 @@ func (c *HTTPClient) execute(ctx context.Context, req *http.Request) (*http.Resp
 				"status", resp.StatusCode,
 			)
 
-			// 429 Too Many Requests: honor Retry-After header
+			// 429 Too Many Requests: honor Retry-After header or fall back to jittered backoff
 			if resp.StatusCode == http.StatusTooManyRequests {
 				if !canRetry || attempt == attempts {
 					return resp, nil
 				}
 
 				retryAfterHeader := resp.Header.Get("Retry-After")
-				_, _ = io.Copy(io.Discard, resp.Body)
-				_ = resp.Body.Close()
-
 				delay, ok := parseRetryAfter(retryAfterHeader)
 				if !ok {
-					return nil, fmt.Errorf("paykit: 429 Too Many Requests with no Retry-After header")
+					delay = calculateBackoffWithJitter(c.retryBaseDelay, attempt)
+				} else if delay > defaultMaxRetryAfterDelay {
+					delay = defaultMaxRetryAfterDelay
 				}
+
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
 
 				if err := sleepFor(ctx, delay); err != nil {
 					return nil, err

@@ -205,6 +205,14 @@ func TestParseRetryAfter(t *testing.T) {
 	}
 }
 
+func TestDefaultMaxRetryAfterDelay(t *testing.T) {
+	t.Parallel()
+
+	if defaultMaxRetryAfterDelay != 60*time.Second {
+		t.Errorf("expected defaultMaxRetryAfterDelay to be 60s, got: %v", defaultMaxRetryAfterDelay)
+	}
+}
+
 func TestCalculateBackoffWithJitter(t *testing.T) {
 	t.Parallel()
 

@@ -31,7 +31,7 @@ var (
 	ErrAuthFailedSentinel            = errors.New(ErrAuthFailed)
 	ErrInsufficientFundsSentinel     = errors.New(ErrInsufficientFunds)
 	ErrTimeoutSentinel               = errors.New(ErrTimeout)
-	ErrMissingIdempotencyKeySentinel = errors.New("paykit: missing required idempotency key for mutating request")
+	ErrMissingIdempotencyKeySentinel = errors.New(ErrMissingIdempotencyKey)
 )
 
 // gatewayErrorMap maps provider-specific error codes to standardized PayKit codes.

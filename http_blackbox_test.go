@@ -3,6 +3,7 @@ package paykit_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -229,6 +230,19 @@ func TestHTTPClient_MutatingMethodWithKey_RetriesOn5xx(t *testing.T) {
 	var attempts int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		count := atomic.AddInt32(&attempts, 1)
+
+		if key := r.Header.Get("Idempotency-Key"); key != "key-retry-123" {
+			t.Errorf("attempt %d: expected Idempotency-Key 'key-retry-123', got %q", count, key)
+		}
+
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("attempt %d: failed to read body: %v", count, err)
+		}
+		if string(bodyBytes) != `{"amount":200}` {
+			t.Errorf("attempt %d: expected body '{\"amount\":200}', got %q", count, string(bodyBytes))
+		}
+
 		if count < 3 {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -329,6 +343,118 @@ func TestHTTPClient_429WithRetryAfter(t *testing.T) {
 	}
 	if totalAttempts := atomic.LoadInt32(&attempts); totalAttempts != 2 {
 		t.Errorf("expected 2 attempts, got: %d", totalAttempts)
+	}
+}
+
+func TestHTTPClient_429WithoutRetryAfter_RetriesWithBackoff(t *testing.T) {
+	t.Parallel()
+
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&attempts, 1)
+		if count < 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"rate_limited"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	client := paykit.NewHTTPClient(paykit.HTTPClientConfig{
+		RetryBaseDelay: 10 * time.Millisecond,
+		MaxAttempts:    3,
+	})
+	client.SetTransport(server.Client().Transport)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/rate-limited-no-header", nil)
+	if err != nil {
+		t.Fatalf("unexpected NewRequest error: %v", err)
+	}
+
+	resp, err := client.Do(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Do error: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK after 429 fallback retry, got: %d", resp.StatusCode)
+	}
+	if totalAttempts := atomic.LoadInt32(&attempts); totalAttempts != 2 {
+		t.Errorf("expected 2 attempts, got: %d", totalAttempts)
+	}
+}
+
+func TestHTTPClient_429WithoutRetryAfter_ExhaustedAttempts(t *testing.T) {
+	t.Parallel()
+
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"rate_limit_exceeded"}`))
+	}))
+	defer server.Close()
+
+	client := paykit.NewHTTPClient(paykit.HTTPClientConfig{
+		RetryBaseDelay: 10 * time.Millisecond,
+		MaxAttempts:    2,
+	})
+	client.SetTransport(server.Client().Transport)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/always-limited", nil)
+	if err != nil {
+		t.Fatalf("unexpected NewRequest error: %v", err)
+	}
+
+	resp, err := client.Do(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected Do error when attempts exhausted: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("expected 429 StatusTooManyRequests, got: %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	if string(body) != `{"error":"rate_limit_exceeded"}` {
+		t.Errorf("expected body '{\"error\":\"rate_limit_exceeded\"}', got %q", string(body))
+	}
+	if totalAttempts := atomic.LoadInt32(&attempts); totalAttempts != 2 {
+		t.Errorf("expected 2 attempts, got: %d", totalAttempts)
+	}
+}
+
+func TestHTTPClient_429WithExcessiveRetryAfter_Clamped(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := paykit.NewHTTPClient(paykit.HTTPClientConfig{
+		MaxAttempts: 2,
+	})
+	client.SetTransport(server.Client().Transport)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/excessive-retry-after", nil)
+	if err != nil {
+		t.Fatalf("unexpected NewRequest error: %v", err)
+	}
+
+	_, err = client.Do(ctx, req)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded, got: %v", err)
 	}
 }
 
