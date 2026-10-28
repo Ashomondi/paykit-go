@@ -35,6 +35,7 @@ git checkout -b feat/my-feature
 ```
 
 Branch naming examples:
+
 - `feat/stk-push`
 - `fix/token-cache`
 - `docs/update-contributing`
@@ -68,28 +69,39 @@ mise tasks
 
 The table below highlights the primary tasks essential for setup and the core contribution lifecycle:
 
-| Task | Purpose |
-|---|---|
-| `mise run setup` | Install development tools, compatibility toolchains, and module dependencies. |
-| `mise run build` | Build all packages with the minimum supported Go version. |
-| `mise run test` | Test all packages with the minimum supported Go version. |
-| `mise run test-dev` | Test all packages with the development Go version. |
-| `mise run vet` | Run `go vet` with the minimum supported Go version. |
-| `mise run format-check` | Check Go formatting and imports without modifying files. |
-| `mise run format` | Format Go source files and organize imports with `goimports`. |
-| `mise run lint-check` | Check code with `golangci-lint`. |
-| `mise run lint` | Apply automated fixes supported by `golangci-lint`. |
-| `mise run ci` | Run all build, test, vet, format-check, and lint-check suites. |
+| Task                             | Purpose                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `mise run setup`                 | Install development tools, compatibility toolchains, and module dependencies. |
+| `mise run build`                 | Build all packages with the minimum supported Go version.                     |
+| `mise run check`                 | Perform all static checks (Go vet/format/lint, shell, markdown) across files. |
+| `mise run test`                  | Test all packages with the minimum supported Go version.                      |
+| `mise run test-dev`              | Test all packages with the development Go version.                            |
+| `mise run ci`                    | Run all continuous integration checks (`build`, `check`, `test`, `test-dev`). |
+| `mise run lint` (alias `fix`)    | Run all formatters and autofix linters across Go, shell, and markdown.        |
+| `mise run pre-push`              | Run formatters/linters (`mise run lint`), then execute `mise run ci`.         |
+| `mise run vet`                   | Vet all packages with the minimum supported Go version.                       |
+| `mise run format-check`          | Check Go formatting and imports without modifying files.                      |
+| `mise run format`                | Format Go source files and organize imports with `goimports`.                 |
+| `mise run lint-check`            | Check Go code with `golangci-lint`.                                           |
+| `mise run sh:format-check`       | Check shell scripts formatting with `shfmt`.                                  |
+| `mise run sh:format`             | Format shell scripts with `shfmt`.                                            |
+| `mise run sh:lint-check`         | Lint shell scripts with `shellcheck`.                                         |
+| `mise run markdown:format-check` | Check markdown formatting with `prettier`.                                    |
+| `mise run markdown:format`       | Format markdown documentation with `prettier`.                                |
 
 Mise automatically activates and installs task-specific tools when running these commands. If you want `go`, `goimports`, and `golangci-lint` available directly in your shell, follow Mise's shell activation instructions.
 
 ### Linting and Formatting Tools
 
-| Scope | Tool | Command (Check) | Command (Format/Fix) |
-|---|---|---|---|
-| Formatting & Imports | `goimports` | `mise run format-check` | `mise run format` |
-| Vetting | `go vet` | `mise run vet` | N/A |
-| Static Analysis / Linting | `golangci-lint` | `mise run lint-check` | `mise run lint` |
+| Scope                     | Tool            | Command (Check)                  | Command (Format/Fix)       |
+| ------------------------- | --------------- | -------------------------------- | -------------------------- |
+| Go Formatting & Imports   | `goimports`     | `mise run format-check`          | `mise run format`          |
+| Go Vetting                | `go vet`        | `mise run vet`                   | N/A                        |
+| Go Static Analysis / Lint | `golangci-lint` | `mise run lint-check`            | `golangci-lint run --fix`  |
+| Shell Script Linting      | `shellcheck`    | `mise run sh:lint-check`         | N/A                        |
+| Shell Script Formatting   | `shfmt`         | `mise run sh:format-check`       | `mise run sh:format`       |
+| Markdown Documentation    | `prettier`      | `mise run markdown:format-check` | `mise run markdown:format` |
+| All Formatters & Linters  | Multi-tool      | `mise run check`                 | `mise run lint` (or `fix`) |
 
 ---
 
@@ -97,17 +109,22 @@ Mise automatically activates and installs task-specific tools when running these
 
 Contributors must test and verify changes locally before pushing, whether GitHub Actions is currently available or not. Relying solely on hosted CI is not permitted.
 
-Run the full local CI suite before committing and pushing:
+### The Standard Pre-Push Workflow
+
+Run the automated pre-push convenience task before pushing your branch:
 
 ```bash
-mise run ci
+mise run pre-push
 ```
 
-For targeted checks during development:
-- Run tests under the race detector: `go test -v -race ./...` (or `mise run test`)
-- Verify vet rules: `mise run vet`
-- Check formatting and imports: `mise run format-check`
-- Check linter warnings: `mise run lint-check`
+This task automatically formats all Go, shell, and markdown files, applies supported linter fixes, and then executes the complete `mise run ci` suite (`build`, `check`, and `test`).
+
+### Targeted Checks During Development
+
+- **All Static Checks (`mise run check`)**: Runs all static tests across Go, shell scripts, and markdown documentation without running logical tests or modifying files.
+- **Logical Tests (`mise run test` or `mise run test-dev`)**: Runs the Go test suite under the minimum supported Go version (1.22) or development version (1.25). To run with the race detector: `go test -v -race ./...`.
+- **Formatting and Linting (`mise run lint` or `mise run fix`)**: Formats all files and applies autofixes across Go, shell scripts, and markdown.
+- **Full CI Suite (`mise run ci`)**: Runs build, all static checks (`check`), and logical test suites (`test`, `test-dev`).
 
 ---
 
@@ -142,11 +159,13 @@ Refer to [ADR 0001: Capability-Based Interface Architecture](docs/adr/0001-capab
 - Prefer composition over inheritance.
 
 ### Package Design & Naming
+
 - **Shallow Nesting**: Avoid deep package hierarchies (e.g., avoid `internal/transport/http/client/v1`). Keep the package layout shallow, clean, and flat (maximum 1–2 levels deep).
 - **Idiomatic Naming**: Use short, lowercase, single-word package names (`paykit`, `mpesa`, `airtelmoney`, `pesapal`, `gateway`). Never use underscores, dashes, or mixedCaps in package names.
 - **No Stutter**: Avoid redundant names where the package name repeats the enclosing directory or type (e.g., avoid `transport.TransportClient` or `client.ClientConfig`).
 
 ### Cross-Package Exported Symbol Documentation
+
 - **Purpose & Intent**: Every exported type, interface, function, method, and package-level constant must be documented with conventional Godoc comments explaining its purpose and consumer usage.
 - **Consumer-Centric Focus**: Godoc comments must clearly explain **when** to use the symbol and **how** to use it without coupling consumers to internal mechanics. The intent of each exported symbol is to expose a specific public capability or piece of data.
 - **Caller-Facing Side Effects**: Disclose caller-facing side effects explicitly in Godoc comments (e.g., consuming or mutating an `io.Reader` such as `r.Body`, acquiring locks, modifying inputs, or mutating persistent state).
@@ -159,6 +178,7 @@ Refer to [ADR 0001: Capability-Based Interface Architecture](docs/adr/0001-capab
 Every logical contribution to the project must include comprehensive tests.
 
 ### Testing Hierarchy: Blackbox vs. Whitebox
+
 - **Blackbox Tests (`package <pkg>_test`)**:
   - Focus on verifying business logic, public API contracts, and integration flows from the consumer's perspective.
   - Must remain immune to internal implementation changes.
@@ -173,6 +193,7 @@ go test -v -race ./...
 ```
 
 ### Test Fixtures & Mock Data
+
 - Fixtures for provider responses belong inside each provider's `fixtures/` directory.
 - Fixtures and mocks must be **deterministic, fictional, centralized, resettable**, and compliant with provider API contracts.
 - **Never** copy real production records or personally identifiable information (PII) into mock data or test fixtures.
@@ -189,6 +210,7 @@ This project follows the [Conventional Commits](https://www.conventionalcommits.
 ```
 
 Common types include:
+
 - `feat`: A new feature or capability.
 - `fix`: A bug fix or defect correction.
 - `docs`: Documentation updates only.
@@ -199,9 +221,11 @@ Common types include:
 - `ci`: CI configuration or script updates.
 
 Common scopes include:
+
 - `mpesa`, `airtelmoney`, `pesapal`, `gateway`, `callback`, `http`, `core`, `types`.
 
 Examples:
+
 ```terminal
 feat(mpesa): add OAuth token caching
 fix(callback): validate callback signature
@@ -220,6 +244,7 @@ chore: initialize project structure
 When opening a pull request, use the repository template at [`.github/pull_request_template.md`](.github/pull_request_template.md).
 
 The template provides a structured format to help reviewers understand author intent, architectural impact, and verification evidence:
+
 - **Summary**: Concise overview and problem context.
 - **Background & Context (Optional)**: Root cause analysis, provider specifications, or architectural motivations.
 - **Key Changes**: Explaining what changed, how it changed, and why it changed for each component or area.
@@ -235,6 +260,7 @@ Contributors are encouraged to adapt or remove optional sections when they do no
 ### Acceptance Evidence Expectations
 
 To maintain high code quality and streamline review, provide tangible evidence of verification matching the modified area(s):
+
 - **Automated Test Output**: `go test -v -race ./...` test runner summary or coverage output.
 - **Provider Sandbox / Simulator Logs**: Sanitized request/response exchanges against provider sandbox environments (e.g., Safaricom Daraja sandbox, Airtel Money simulator, Pesapal sandbox).
 - **Deterministic Fixture Assertions**: Output demonstrating deterministic test fixture passes.
@@ -242,8 +268,9 @@ To maintain high code quality and streamline review, provide tangible evidence o
 ### Recommended Pre-Submission Checklist
 
 Before finalizing your pull request and requesting review, verify the following:
+
 - **Branch Freshness**: Your branch is rebased on current `origin/main`.
-- **Local CI Cleanliness**: `mise run ci` passes cleanly (build, test, test-dev, vet, format-check, lint-check).
+- **Local CI Cleanliness**: `mise run pre-push` or `mise run ci` passes cleanly (`build`, `check`, `test`, `test-dev`).
 - **Tests & Coverage**: Comprehensive blackbox and whitebox tests are included.
 - **Exported Symbols**: Exported types, interfaces, and methods are documented with consumer-centric Godoc comments disclosing side effects.
 - **Architecture Alignment**: Changes conform to ADR 0001 capability interfaces and error envelopes.
@@ -255,6 +282,7 @@ Before finalizing your pull request and requesting review, verify the following:
 ## Adding a New Payment Provider
 
 When implementing a new payment provider:
+
 1. Create a dedicated package (`<providername>/`).
 2. Implement the shared capability interfaces (`Gateway`, `Disburser`, `WebhookHandler`, etc.) as defined in `gateway.go`.
 3. Handle provider authentication internally (e.g., token management, caching, signature generation).
@@ -268,6 +296,7 @@ When implementing a new payment provider:
 ## Reporting Issues
 
 When reporting an issue, please include:
+
 - A clear description of the problem.
 - Minimal reproducible example or steps to reproduce.
 - Expected behavior vs. actual behavior.

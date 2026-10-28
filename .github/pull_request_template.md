@@ -66,9 +66,9 @@ Provide concrete evidence of validation. Detail the automated test commands run,
 test results, and any manual verification performed (see CONTRIBUTING.md for evidence expectations).
 
 Examples:
-- `mise run lint`: Passed with zero warnings.
+- `mise run check`: Passed with zero static analysis or formatting warnings.
 - `mise run test`: All unit/integration tests passed.
-- `mise run ci`: Full test, vet, format, and lint suite passed cleanly.
+- `mise run pre-push` / `mise run ci`: Full suite passed cleanly.
 -->
 
 ---
