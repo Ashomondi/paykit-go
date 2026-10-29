@@ -1,20 +1,20 @@
 package pesapal
 
-// PesapalError represents the error object returned by Pesapal v3 API responses.
+// PesapalError represents an error returned by the Pesapal API.
 type PesapalError struct {
-	ErrorType   interface{} `json:"error_type"`
-	Code        interface{} `json:"code"`
-	Message     string      `json:"message"`
-	CallBackURL string      `json:"call_back_url"`
+	ErrorType   any    `json:"error_type"`
+	Code        any    `json:"code"`
+	Message     string `json:"message"`
+	CallBackURL string `json:"call_back_url"`
 }
 
-// AuthRequest is the payload for Pesapal v3 authentication (RequestToken).
+// AuthRequest contains the credentials required to authenticate with Pesapal.
 type AuthRequest struct {
 	ConsumerKey    string `json:"consumer_key"`
 	ConsumerSecret string `json:"consumer_secret"`
 }
 
-// AuthResponse is the response returned by Pesapal v3 authentication.
+// AuthResponse represents the response returned by the Pesapal authentication endpoint.
 type AuthResponse struct {
 	Token      string        `json:"token"`
 	ExpiryDate string        `json:"expiryDate"`
@@ -23,13 +23,13 @@ type AuthResponse struct {
 	Message    string        `json:"message"`
 }
 
-// IPNRegistrationRequest registers an IPN URL with Pesapal v3.
+// IPNRegistrationRequest contains the details required to register an IPN URL.
 type IPNRegistrationRequest struct {
 	URL                 string `json:"url"`
 	IPNNotificationType string `json:"ipn_notification_type"`
 }
 
-// IPNRegistrationResponse is returned after registering an IPN URL.
+// IPNRegistrationResponse represents the response returned after registering an IPN URL.
 type IPNRegistrationResponse struct {
 	URL                            string        `json:"url"`
 	CreatedDate                    string        `json:"created_date"`
@@ -42,7 +42,7 @@ type IPNRegistrationResponse struct {
 	Status                         string        `json:"status"`
 }
 
-// BillingAddress is the customer address object used in SubmitOrderRequest.
+// BillingAddress represents the billing details associated with a Pesapal order.
 type BillingAddress struct {
 	PhoneNumber  string `json:"phone_number,omitempty"`
 	EmailAddress string `json:"email_address,omitempty"`
@@ -54,11 +54,11 @@ type BillingAddress struct {
 	Line2        string `json:"line_2,omitempty"`
 	City         string `json:"city,omitempty"`
 	State        string `json:"state,omitempty"`
-	PostalCode   int    `json:"postal_code,omitempty"`
-	ZipCode      int    `json:"zip_code,omitempty"`
+	PostalCode   string `json:"postal_code,omitempty"`
+	ZipCode      string `json:"zip_code,omitempty"`
 }
 
-// SubmitOrderRequest creates a payment order in Pesapal v3.
+// SubmitOrderRequest contains the details required to submit an order to Pesapal.
 type SubmitOrderRequest struct {
 	ID              string         `json:"id"`
 	Currency        string         `json:"currency"`
@@ -72,7 +72,7 @@ type SubmitOrderRequest struct {
 	BillingAddress  BillingAddress `json:"billing_address"`
 }
 
-// SubmitOrderResponse is returned after submitting an order.
+// SubmitOrderResponse represents the response returned after submitting an order.
 type SubmitOrderResponse struct {
 	OrderTrackingID   string        `json:"order_tracking_id"`
 	MerchantReference string        `json:"merchant_reference"`
@@ -82,7 +82,7 @@ type SubmitOrderResponse struct {
 	Message           string        `json:"message"`
 }
 
-// TransactionStatusResponse is returned by GetTransactionStatus.
+// TransactionStatusResponse represents the status and payment details of a Pesapal transaction.
 type TransactionStatusResponse struct {
 	PaymentMethod            string        `json:"payment_method"`
 	Amount                   float64       `json:"amount"`
